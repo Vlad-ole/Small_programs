@@ -39,7 +39,40 @@ using namespace std;
 //	return cnst * tmp1*tmp1 + tmp2*tmp2;
 //}
 
-double RosenBrock(const double *xx)
+double OneEvent(const double *xx)
+{
+	Number_of_itterations++;
+	//if (Number_of_itterations % 10 == 0) 
+	cerr << "Number_of_itterations = " << Number_of_itterations << endl;
+
+	//xx[0] - xx[24] = lrf_MC
+
+	const Double_t x1 = xx[25];
+	const Double_t y1 = xx[26];
+	const Double_t N1 = xx[27];
+
+	LRF lrf1(x1, y1, N1);
+
+
+	vector<double> E;//expected LRF values
+	for (int i = 2; i <= 6; i++)
+	{
+		for (int j = 2; j <= 6; j++)
+		{
+			E.push_back(lrf1.GetLRF()[i][j]);
+		}
+	}
+
+	double chi = 0;
+	for (int i = 0; i < 25; i++)
+	{
+		chi += pow(xx[i] - E[i], 2.0) / E[i];
+	}
+
+	return chi;
+}
+
+double TwoEvents(const double *xx)
 {
 	Number_of_itterations++;
 	//if (Number_of_itterations % 10 == 0) 
@@ -86,6 +119,44 @@ double RosenBrock(const double *xx)
 	return chi;
 }
 
+double TwoEventsMLE(const double *xx)
+{
+	Number_of_itterations++;
+	//if (Number_of_itterations % 10 == 0) 
+	cerr << "Number_of_itterations = " << Number_of_itterations << endl;
+
+	//xx[0] - xx[24] = lrf_MC
+
+	const Double_t x1 = xx[25];
+	const Double_t y1 = xx[26];
+	const Double_t N1 = xx[27];
+
+	const Double_t x2 = xx[28];
+	const Double_t y2 = xx[29];
+	const Double_t N2 = xx[30];
+
+	LRF lrf1(x1, y1, N1);
+	LRF lrf2(x2, y2, N2);
+	LRF lrf_sum(lrf1, lrf2);
+
+	vector<double> E;//expected LRF values
+	for (int i = 2; i <= 6; i++)
+	{
+		for (int j = 2; j <= 6; j++)
+		{
+			E.push_back(lrf_sum.GetLRF()[i][j]);
+		}
+	}
+
+	double chi = 0;
+	for (int i = 0; i < 25; i++)
+	{
+		chi += pow(xx[i] - E[i], 2.0) / E[i];
+	}
+
+	return chi;
+}
+
 
 int NumericalMinimization(LRF *lrf, const char * minName = "Minuit2",
 	const char *algoName = "",
@@ -114,7 +185,7 @@ int NumericalMinimization(LRF *lrf, const char * minName = "Minuit2",
 
 	// create function wrapper for minimizer
 	// a IMultiGenFunction type
-	ROOT::Math::Functor f(&RosenBrock, 31);
+	ROOT::Math::Functor f(&TwoEvents, 31);
 	//double step[2] = { 0.01, 0.01 };
 	// starting point
 
@@ -149,7 +220,7 @@ int NumericalMinimization(LRF *lrf, const char * minName = "Minuit2",
 
 	minimum->SetLimitedVariable(25, "x1", variable[25], 0.1, -19.9, 0);
 	minimum->SetLimitedVariable(26, "y1", variable[26], 0.1, -19.9, 19.9);
-	minimum->SetLimitedVariable(27, "N1", variable[27], 1, 1500, 2500);
+	minimum->SetLimitedVariable(27, "N1", variable[27], 1, 1500 , 2500 );
 	//minimum->SetFixedVariable(27, "N1", 2000);
 
 	minimum->SetLimitedVariable(28, "x2", variable[28], 0.1, 0, 19.9);
@@ -158,7 +229,7 @@ int NumericalMinimization(LRF *lrf, const char * minName = "Minuit2",
 	minimum->SetLimitedVariable(29, "y2", variable[29], 0.1, -19.9, 19.9);
 	//minimum->SetFixedVariable(29, "y2", -15);
 	
-	minimum->SetLimitedVariable(30, "N2", variable[30], 1, 1500, 2500);
+	minimum->SetLimitedVariable(30, "N2", variable[30], 1, 1500 , 2500 );
 	//minimum->SetFixedVariable(30, "N2", 2000);
 
 	
@@ -168,16 +239,35 @@ int NumericalMinimization(LRF *lrf, const char * minName = "Minuit2",
 	minimum->Minimize();
 
 	const double *xs = minimum->X();
+	const double *xs_err = minimum->Errors();
 	cout << "N_itter = " << minimum->NIterations() << "; minName = " << minName << "; algoName = " << algoName << endl;
 	std::cout << "Minimum: f(" << xs[25] << "," << xs[26] << "," << xs[27] << "; "
 		<< xs[28] << "," << xs[29] << "," << xs[30] << "): " 
 		<< minimum->MinValue() << std::endl;
 
 	cout << "List of parameters:" << endl;
+	double max_rel_error = 0;
 	for (int i = 0; i < 31; i++)
 	{
-		cout << "xs[" << i << "] = " << xs[i] << endl;
+		double previous_max_rel_err = max_rel_error;
+		double rel_err = 0;
+		if (xs[i]) rel_err = fabs(xs_err[i] / xs[i]);
+		cout << "xs[" << i << "] = " << xs[i] << " +- " << xs_err[i] << "; rel_err = " << rel_err << endl;
+
+		if (rel_err > max_rel_error) max_rel_error = rel_err;
 	}
+	cout << "max_rel_error(%) = " << max_rel_error * 100 << endl;
+
+	//cout << "List of parameters:" << endl;
+	//for (int i = 0; i < 31; i++)
+	//{
+	//	double rel_err = 0;
+	//	if (xs[i]) rel_err = xs_err[i] / xs[i];
+	//	cout << "xs[" << i << "] = " << xs[i] << " +- " << xs_err[i] << "; rel_err = " << rel_err << endl;
+	//}
+
+
+	
 
 	//// expected minimum is 0
 	//if (minimum->MinValue()  < 1.E-4  && f(xs) < 1.E-4)
@@ -192,37 +282,92 @@ int NumericalMinimization(LRF *lrf, const char * minName = "Minuit2",
 	return 0;
 }
 
+int NumericalMinimizationOneEvent(LRF *lrf, const char * minName = "Minuit2",
+	const char *algoName = "",
+	int randomSeed = -1)
+{
+	ROOT::Math::Minimizer* minimum1 =
+		ROOT::Math::Factory::CreateMinimizer(minName, algoName);
+
+	// set tolerance , etc...
+	minimum1->SetMaxFunctionCalls(1000000); // for Minuit/Minuit2
+	minimum1->SetMaxIterations(10000);  // for GSL
+	minimum1->SetTolerance(0.001);
+	minimum1->SetPrintLevel(1);
+
+	// create function wrapper for minimizer
+	// a IMultiGenFunction type
+	ROOT::Math::Functor f1(&OneEvent, 28);
+
+	minimum1->SetFunction(f1);
+
+	vector<double> variable;
+	variable.resize(28);
+
+	vector<double> O;//observed values (LRF_MC)
+	for (int i = 2; i <= 6; i++)
+	{
+		for (int j = 2; j <= 6; j++)
+		{
+			O.push_back(lrf->GetLRF_MC()[i][j]);
+		}
+	}
+	for (int i = 0; i < 25; i++)
+	{
+		ostringstream sst;
+		sst << i;
+		minimum1->SetFixedVariable(i, sst.str().c_str(), O[i]);
+		variable[i] = O[i];
+	}
+	
+	minimum1->SetLimitedVariable(25, "x1", variable[25], 0.1, -19.9, 19.9);
+	minimum1->SetLimitedVariable(26, "y1", variable[26], 0.1, -19.9, 19.9);
+	minimum1->SetLimitedVariable(27, "N1", variable[27], 1, 1500, 2500);
+	//minimum->SetFixedVariable(27, "N1", 2000);
+
+	// do the minimization
+	minimum1->Minimize();
+
+	const double *xs = minimum1->X();
+	const double *xs_err = minimum1->Errors();
+	cout << "N_itter = " << minimum1->NIterations() << "; minName = " << minName << "; algoName = " << algoName << endl;
+	std::cout << "Minimum: f(" << xs[25] << "," << xs[26] << "," << xs[27] << "): " << minimum1->MinValue() << std::endl;
+
+
+	cout << "List of parameters:" << endl;
+	double max_rel_error = 0;
+	for (int i = 0; i < 28; i++)
+	{
+		double previous_max_rel_err = max_rel_error;
+		double rel_err = 0;
+		if (xs[i]) rel_err = fabs(xs_err[i] / xs[i]);
+		cout << "xs[" << i << "] = " << xs[i] << " +- " << xs_err[i] << "; rel_err = " << rel_err << endl;
+
+		if (rel_err > max_rel_error) max_rel_error = rel_err;
+	}
+	cout << "max_rel_error(%) = " << max_rel_error*100 << endl;
+
+	return 0;
+}
+
 int main()
 {
 	TApplication theApp("theApp", 0, 0);
 
-	//test t1;
-	//test t2;
-	
-	//LRF lrf1(0, 0, 2000);
-	//lrf1.Generate();
-	//lrf1.Print(0);
-	//lrf1.Print(1);
+	double x1 = -15;
+	double y1 = -15;
+	double N1 = 2000;
 
-	//LRF lrf2(10, 0, 2000);
-	//lrf2.Generate();
-	//lrf2.Print(0);
-	//lrf2.Print(1);
+	double x2 = 15;
+	double y2 = 15;
+	double N2 = 2000;
 
-
-	//LRF lrf2(10, 0, 2000);
-	//lrf2.Generate();
-
-	//LRF lrf_sum(lrf1, lrf2);
-	//LRF* lrf_sum = new LRF(lrf1, lrf2);
-
-	
-	
-	//lrf_init_single = new LRF(0, 0, 2000);
+	double r = sqrt(pow((x1 - x2), 2.0) + pow((y1 - y2), 2.0));
+	cout << "r = " << r << endl;
 
 	cout << "**********************************************" << endl;
 	cout << "lrf1" << endl;
-	LRF lrf1(15, 15, 2000);
+	LRF lrf1(x1, y1, N1);
 	lrf1.Print(0);
 	lrf1.Generate();
 	lrf1.Print(1);
@@ -232,7 +377,7 @@ int main()
 
 	cout << "**********************************************" << endl;
 	cout << "lrf2" << endl;
-	LRF lrf2(-15, -15, 2000);
+	LRF lrf2(x2, y2, N2);
 	lrf2.Print(0);
 	lrf2.Generate();
 	lrf2.Print(1);
@@ -245,7 +390,25 @@ int main()
 	lrf_sum->Print(1);
 	cout << "**********************************************" << endl;
 
-	NumericalMinimization(lrf_sum, "Minuit2", "Simplex");
+
+	LRF* lrf_1ev = new LRF(10, 10, 2000);
+	lrf_1ev->Generate();
+
+	// create minimizer giving a name and a name (optionally) for the specific
+	// algorithm
+	// possible choices are:
+	//     minName                  algoName
+	// Minuit /Minuit2             Migrad, Simplex,Combined,Scan  (default is Migrad)
+	//  Minuit2                     Fumili2
+	//  Fumili
+	//  GSLMultiMin                ConjugateFR, ConjugatePR, BFGS,
+	//                              BFGS2, SteepestDescent
+	//  GSLMultiFit
+	//   GSLSimAn
+	//   Genetic
+
+	NumericalMinimization(lrf_sum);
+	//NumericalMinimizationOneEvent(lrf_1ev);
 	
 	//lrf_init_double = new LRF(0, 0, 2000);
 
